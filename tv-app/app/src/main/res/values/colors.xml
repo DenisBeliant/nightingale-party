@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Nightingale's dark theme and the party "game show" accents. -->
+    <color name="stage">#FF0D0D16</color>
+    <color name="card">#FF212130</color>
+    <color name="primary">#FF4A6BF7</color>
+    <color name="primary_shadow">#FF2B3FA8</color>
+    <color name="gold">#FFFACC15</color>
+    <color name="text">#FFFFFFFF</color>
+    <color name="muted">#FFA7ABC6</color>
+</resources>

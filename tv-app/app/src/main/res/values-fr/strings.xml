@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="picker_title">Choisis ton serveur Nightingale</string>
+    <string name="picker_searching">Recherche des serveurs sur ton réseau…</string>
+    <string name="picker_none">Aucun serveur trouvé. Lance Nightingale sur ton ordinateur (même Wi-Fi), puis relance la recherche.</string>
+    <string name="picker_found">Choisis l\'ordinateur avec lequel chanter :</string>
+    <string name="picker_last">Dernier utilisé</string>
+    <string name="picker_rescan">Rechercher à nouveau</string>
+    <string name="picker_manual">Saisir une adresse</string>
+    <string name="picker_connecting">Connexion à %1$s…</string>
+    <string name="picker_unreachable">%1$s ne répond pas. Le serveur est-il lancé ?</string>
+    <string name="manual_title">Adresse du serveur</string>
+    <string name="manual_hint">192.168.1.10 ou 192.168.1.10:8080</string>
+    <string name="manual_ok">Se connecter</string>
+    <string name="manual_cancel">Annuler</string>
+    <string name="press_back_again">Appuie encore sur Retour pour quitter Nightingale</string>
+</resources>

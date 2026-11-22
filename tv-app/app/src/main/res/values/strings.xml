@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Nightingale</string>
+    <string name="picker_title">Choose your Nightingale server</string>
+    <string name="picker_searching">Looking for servers on your network…</string>
+    <string name="picker_none">No server found. Start Nightingale on your computer (same Wi-Fi), then search again.</string>
+    <string name="picker_found">Pick the computer to sing with:</string>
+    <string name="picker_last">Last used</string>
+    <string name="picker_rescan">Search again</string>
+    <string name="picker_manual">Enter an address</string>
+    <string name="picker_connecting">Connecting to %1$s…</string>
+    <string name="picker_unreachable">%1$s does not answer. Is the server running?</string>
+    <string name="manual_title">Server address</string>
+    <string name="manual_hint">192.168.1.10 or 192.168.1.10:8080</string>
+    <string name="manual_ok">Connect</string>
+    <string name="manual_cancel">Cancel</string>
+    <string name="press_back_again">Press Back again to leave Nightingale</string>
+</resources>
