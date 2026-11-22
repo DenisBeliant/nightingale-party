@@ -23,6 +23,10 @@ struct Args {
     #[arg(long, env = "NIGHTINGALE_LIBRARY_PATH")]
     library: Option<String>,
 
+    /// Name shown in the TV app's server list (defaults to the host name).
+    #[arg(long, env = "NIGHTINGALE_NAME")]
+    name: Option<String>,
+
     /// Base URL phones should use for the queue QR, e.g.
     /// `http://192.168.1.10:8080`. Equivalent to `NIGHTINGALE_REMOTE_URL=...`.
     /// Overrides LAN address detection, which cannot see a container port
@@ -77,6 +81,11 @@ async fn main() -> Result<(), String> {
         data.is_some(),
         library.is_some(),
     );
+
+    // Phones join a party over HTTPS: their browsers only allow the microphone there.
+    tokio::spawn(server::serve_party_tls(state.clone()));
+    // The TV app finds this server on the LAN without typing an address.
+    tokio::spawn(server::serve_discovery(args.bind, args.name.clone()));
 
     let app = server::router(state);
 

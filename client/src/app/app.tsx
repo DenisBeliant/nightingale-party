@@ -9,6 +9,10 @@ import { loadInterfaceLanguage } from '@/bridge/remote-control';
 import { LibraryPage } from '@/features/library/library-page';
 import { MenuLayout } from '@/features/menu/menu';
 import { MenuFocusProvider } from '@/features/menu/providers/menu-focus-context';
+import { PartyHostPage } from '@/features/party/host/party-host-page';
+import { ToParty, TvPartyLayout } from '@/features/party/host/tv-party-layout';
+import { PartyPhonePage } from '@/features/party/phone/party-phone-page';
+import { PlayPage } from '@/features/party/play/play-page';
 import { Playback } from '@/features/playback/playback';
 import { PlaylistsPage } from '@/features/playlists/playlists-page';
 import { RemoteQueuePage } from '@/features/remote/remote-queue';
@@ -20,6 +24,7 @@ import { TooltipProvider } from '@/shared/components/ui/tooltip';
 import { TauriAppShell } from '@/shared/components/window/title-bar';
 import { useConfig } from '@/shared/config/use-config';
 import { REMOTE_LANGUAGE } from '@/shared/query-keys';
+import { isTvMode } from '@/shared/tv-mode';
 
 import { NavInputProvider } from './providers/nav-input-context';
 import { ThemeProvider } from './providers/theme-context';
@@ -30,7 +35,24 @@ const queryClient = new QueryClient();
  * The phone page skips the desktop shell: it has no host config, no window
  * chrome, and no business loading library or playback state.
  */
-const isRemoteQueue = (): boolean => window.location.pathname.replace(/\/+$/, '') === '/q';
+/** Ports of the desktop app's phone surfaces: LAN remote (HTTP) and party (HTTPS). */
+const PHONE_PORTS = new Set(['64449', '64450']);
+
+/**
+ * Phone pages: the queue remote, and the party page when a phone opened it
+ * (party port, or the pairing token of its QR link). On the host — desktop
+ * window or a TV browser on the self-hosted server — `/party` is the host screen.
+ */
+const isRemoteSurface = (): boolean => {
+  const path = window.location.pathname.replace(/\/+$/, '');
+  if (path === '/q') {
+    return true;
+  }
+  return (
+    path === '/party' &&
+    (PHONE_PORTS.has(window.location.port) || new URLSearchParams(window.location.search).has('t'))
+  );
+};
 
 const UpdateAutoCheck = () => {
   useUpdate();
@@ -38,16 +60,32 @@ const UpdateAutoCheck = () => {
   return null;
 };
 
+/** Desktop and browser: the full app around the menu. */
+const menuRoutes = (
+  <Route path="/" element={<MenuLayout />}>
+    <Route index element={<LibraryPage />} />
+    <Route path="settings" element={<SettingsPage />} />
+    <Route path="playlists" element={<PlaylistsPage />} />
+    <Route path="party" element={<PartyHostPage />} />
+    <Route path="play" element={<PlayPage />} />
+  </Route>
+);
+
+/** TV: the party screen only (and playback); every other page leads there. */
+const tvRoutes = (
+  <Route path="/" element={<TvPartyLayout />}>
+    <Route index element={<ToParty />} />
+    <Route path="party" element={<PartyHostPage />} />
+    <Route path="*" element={<ToParty />} />
+  </Route>
+);
+
 const InnerWrapper = () => (
   <>
     <MenuFocusProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<MenuLayout />}>
-            <Route index element={<LibraryPage />} />
-            <Route path="settings" element={<SettingsPage />} />
-            <Route path="playlists" element={<PlaylistsPage />} />
-          </Route>
+          {isTvMode() ? tvRoutes : menuRoutes}
           <Route path="/playback" element={<Playback />} />
         </Routes>
       </BrowserRouter>
@@ -85,6 +123,7 @@ const RemoteShell = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/q" element={<RemoteQueuePage />} />
+          <Route path="/party" element={<PartyPhonePage />} />
         </Routes>
       </BrowserRouter>
       <Toaster />
@@ -118,7 +157,7 @@ export const App = () => {
   return (
     <NavInputProvider>
       <QueryClientProvider client={queryClient}>
-        {isRemoteQueue() ? <RemoteShell /> : <ThemeWrapper />}
+        {isRemoteSurface() ? <RemoteShell /> : <ThemeWrapper />}
       </QueryClientProvider>
     </NavInputProvider>
   );

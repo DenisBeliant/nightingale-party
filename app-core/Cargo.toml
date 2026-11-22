@@ -26,6 +26,8 @@ md-5 = "0.10"
 zip = { version = "4", default-features = false }
 unicode-normalization = "0.1"
 qrcode = { version = "0.14", default-features = false }
+# Self-signed certificate for the HTTPS party page (ring backend, like rustls here).
+rcgen = { version = "0.13", default-features = false, features = ["crypto", "pem", "ring"] }
 
 [build-dependencies]
 dotenvy = "0.15"

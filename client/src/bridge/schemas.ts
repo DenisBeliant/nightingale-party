@@ -75,22 +75,46 @@ export const playbackPlayerSchema = z.object({
   color: playerColorSchema,
 });
 
+type PlaybackPlayerInput = z.infer<typeof playbackPlayerSchema>;
+
+const checkUniquePlayers = (players: PlaybackPlayerInput[], context: z.RefinementCtx): void => {
+  const playerIds = new Set(players.map((player) => player.id));
+  const microphoneIds = new Set(players.map((player) => player.microphoneId));
+  const profiles = players.flatMap((player) => (player.profile === null ? [] : [player.profile]));
+  if (playerIds.size !== players.length) {
+    context.addIssue({ code: 'custom', message: 'Multiplayer player IDs must be unique' });
+  }
+  if (microphoneIds.size !== players.length) {
+    context.addIssue({ code: 'custom', message: 'Multiplayer microphones must be unique' });
+  }
+  if (new Set(profiles).size !== profiles.length) {
+    context.addIssue({ code: 'custom', message: 'Multiplayer profiles must be unique' });
+  }
+};
+
+/** Multiplayer setup of local microphones: two singers or more. */
 export const playbackPlayersSchema = z
   .array(playbackPlayerSchema)
   .min(2)
   .max(4)
+  .superRefine(checkUniquePlayers);
+
+/**
+ * Singers of one playback. A party round may have a single singer (a phone),
+ * so it is the one case allowed below two players.
+ */
+const playbackSessionPlayersSchema = z
+  .array(playbackPlayerSchema)
+  .min(1)
+  .max(4)
   .superRefine((players, context) => {
-    const playerIds = new Set(players.map((player) => player.id));
-    const microphoneIds = new Set(players.map((player) => player.microphoneId));
-    const profiles = players.flatMap((player) => (player.profile === null ? [] : [player.profile]));
-    if (playerIds.size !== players.length) {
-      context.addIssue({ code: 'custom', message: 'Multiplayer player IDs must be unique' });
-    }
-    if (microphoneIds.size !== players.length) {
-      context.addIssue({ code: 'custom', message: 'Multiplayer microphones must be unique' });
-    }
-    if (new Set(profiles).size !== profiles.length) {
-      context.addIssue({ code: 'custom', message: 'Multiplayer profiles must be unique' });
+    checkUniquePlayers(players, context);
+    const single = players.length === 1 ? players[0] : null;
+    if (single !== null && !single.microphoneId.startsWith('party:')) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A single singer is only allowed in a party round',
+      });
     }
   });
 
@@ -261,5 +285,5 @@ export const playbackLocationStateSchema = z.object({
   song: songSchema,
   queuePlayback: z.boolean().optional(),
   playbackId: z.string().optional(),
-  players: playbackPlayersSchema.optional(),
+  players: playbackSessionPlayersSchema.optional(),
 });

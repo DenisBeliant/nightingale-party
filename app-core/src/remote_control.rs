@@ -13,6 +13,11 @@ use serde::{Deserialize, Serialize};
 /// resolving after a restart.
 pub const REMOTE_PORT: u16 = 64449;
 
+/// HTTPS port for the multiplayer party page: phone browsers only allow the
+/// microphone on secure pages, so the party is also served over TLS with a
+/// self-signed certificate (one warning per phone, the first time).
+pub const PARTY_TLS_PORT: u16 = 64450;
+
 const TOKEN_BYTES: usize = 16;
 const QR_QUIET_MODULES: i64 = 3;
 
@@ -88,6 +93,13 @@ impl RemoteControl {
 
     pub fn info(&self) -> RemoteInfo {
         self.info_with_url(self.url())
+    }
+
+    /// `https://<lan-ip>:<PARTY_TLS_PORT>/party?t=<token>` and its QR code.
+    pub fn party_info(&self) -> RemoteInfo {
+        let url =
+            lan_ip().map(|ip| format!("https://{ip}:{PARTY_TLS_PORT}/party?t={}", self.token));
+        self.info_with_url(url)
     }
 
     /// Builds the payload around a caller-supplied base URL. The self-hosted

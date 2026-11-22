@@ -30,8 +30,27 @@ const STYLES = {
   nextLineEstimated: { rgb: 'rgb(255,200,100)', opacity: 0.25 },
 } as const;
 
-const unsungStyle = (word: Word): WordStyle =>
-  word.estimated === true ? STYLES.unsungEstimated : STYLES.unsung;
+/** Colours of the line being sung. */
+type LinePalette = {
+  unsung: WordStyle;
+  unsungEstimated: WordStyle;
+  sung: WordStyle;
+};
+
+/** Party "game show" style: dark ink on a white card, sung words in Nightingale blue. */
+type LyricsVariant = 'default' | 'stage';
+
+const PALETTES: Record<LyricsVariant, LinePalette> = {
+  default: STYLES,
+  stage: {
+    unsung: { rgb: 'rgb(31,31,46)', opacity: 0.55 },
+    unsungEstimated: { rgb: 'rgb(161,98,7)', opacity: 0.6 },
+    sung: { rgb: 'rgb(74,107,247)', opacity: 1.0 },
+  },
+};
+
+const unsungStyle = (word: Word, palette: LinePalette): WordStyle =>
+  word.estimated === true ? palette.unsungEstimated : palette.unsung;
 
 const nextLineStyle = (word: Word): WordStyle =>
   word.estimated === true ? STYLES.nextLineEstimated : STYLES.nextLine;
@@ -61,8 +80,13 @@ function interpolateStyle(from: WordStyle, to: WordStyle, t: number): WordStyle 
 
 // --- Per-frame DOM updates (called via rAF subscriber, no React re-renders) ---
 
-function computeWordStyle(word: Word, time: number, isActive: boolean): WordStyle {
-  const base = unsungStyle(word);
+function computeWordStyle(
+  word: Word,
+  time: number,
+  isActive: boolean,
+  palette: LinePalette,
+): WordStyle {
+  const base = unsungStyle(word, palette);
   if (!isActive) {
     return base;
   }
@@ -71,10 +95,10 @@ function computeWordStyle(word: Word, time: number, isActive: boolean): WordStyl
   const wEnd = word.end - WORD_HIGHLIGHT_LEAD;
 
   if (time >= wEnd) {
-    return STYLES.sung;
+    return palette.sung;
   }
   if (time >= wStart) {
-    return interpolateStyle(base, STYLES.sung, (time - wStart) / (wEnd - wStart));
+    return interpolateStyle(base, palette.sung, (time - wStart) / (wEnd - wStart));
   }
   return base;
 }
@@ -83,14 +107,15 @@ function updateWordSpans(
   spans: (HTMLSpanElement | null)[],
   words: Word[],
   time: number,
-  isActive: boolean,
+  line: { isActive: boolean; palette: LinePalette },
 ) {
+  const { isActive, palette } = line;
   for (let i = 0; i < words.length; i++) {
     const span = spans[i];
     if (!span) {
       continue;
     }
-    const s = computeWordStyle(words[i], time, isActive);
+    const s = computeWordStyle(words[i], time, isActive, palette);
     span.style.color = s.rgb;
     span.style.opacity = String(s.opacity);
   }
@@ -143,6 +168,22 @@ type LyricsVerticalPosition = NonNullable<AppConfig['lyrics_vertical_position']>
 type LyricsHorizontalPosition = NonNullable<AppConfig['lyrics_horizontal_position']>;
 
 type LyricsRomanizationMode = NonNullable<AppConfig['lyrics_romanization_mode']>;
+
+/** Lyrics of a party round sit above the contestant desks at the bottom. */
+const STAGE_BOTTOM_CLASS =
+  'top-[8rem] bottom-[calc(12rem+env(safe-area-inset-bottom))] justify-end';
+
+const CURRENT_BOX_CLASS: Record<LyricsVariant, string> = {
+  default: 'relative max-w-full rounded-lg bg-black/40 px-3 py-2 sm:px-5 sm:py-2.5',
+  stage:
+    'relative max-w-full rounded-3xl bg-white px-5 py-3 font-party font-black shadow-[0_8px_0_#9AA3C7] sm:px-8 sm:py-4',
+};
+
+const NEXT_BOX_CLASS: Record<LyricsVariant, string> = {
+  default: 'max-w-full rounded-md bg-black/25 px-3 py-1.5 sm:px-4',
+  stage:
+    'max-w-full rounded-2xl bg-[#212130]/90 px-4 py-2 font-party font-bold shadow-[0_5px_0_black] sm:px-5',
+};
 
 const verticalClass: Record<LyricsVerticalPosition, string> = {
   bottom: 'top-[8rem] bottom-[calc(2rem+env(safe-area-inset-bottom))] justify-end sm:bottom-[60px]',
@@ -232,16 +273,25 @@ type LyricsDisplayProps = {
   horizontalPosition?: LyricsHorizontalPosition | null;
   scale?: number | null;
   romanizationMode: LyricsRomanizationMode;
+  /** `stage`: the party "game show" look (white card, blue sung words). */
+  variant?: LyricsVariant;
 };
 
-const lyricPositions = (props: LyricsDisplayProps) => ({
-  vertical: props.verticalPosition ?? 'bottom',
-  horizontal: props.horizontalPosition ?? 'center',
-});
+const lyricPositions = (props: LyricsDisplayProps) => {
+  const vertical = props.verticalPosition ?? 'bottom';
+  const variant = props.variant ?? 'default';
+  return {
+    variant,
+    verticalBox:
+      variant === 'stage' && vertical === 'bottom' ? STAGE_BOTTOM_CLASS : verticalClass[vertical],
+    horizontal: props.horizontalPosition ?? 'center',
+  };
+};
 
 function LyricsDisplayImpl(props: LyricsDisplayProps) {
   const { segments, romanizationMode } = props;
-  const { vertical, horizontal } = lyricPositions(props);
+  const { variant, verticalBox, horizontal } = lyricPositions(props);
+  const palette = PALETTES[variant];
   const scale = clampPlaybackScale(props.scale);
   const currentFontSize = `clamp(${1.35 * scale}rem, ${7 * scale}svh, ${2.5 * scale}rem)`;
   const nextFontSize = `clamp(${0.9 * scale}rem, ${4.5 * scale}svh, ${1.5 * scale}rem)`;
@@ -294,12 +344,10 @@ function LyricsDisplayImpl(props: LyricsDisplayProps) {
       updateCountdown(countdownRef.current, visibility.showCountdown, visibility.timeUntil);
       // Bridged finished lines are past every word's end, so treating them as
       // active keeps the already-sung colors instead of dropping to unsung.
-      updateWordSpans(
-        wordRefs.current,
-        visibility.segment.words,
-        time,
-        visibility.isActive || visibility.bridgeShortGap,
-      );
+      updateWordSpans(wordRefs.current, visibility.segment.words, time, {
+        isActive: visibility.isActive || visibility.bridgeShortGap,
+        palette,
+      });
       appliedIdxRef.current = idx;
     };
 
@@ -334,7 +382,7 @@ function LyricsDisplayImpl(props: LyricsDisplayProps) {
       cleanup();
       unsubscribe();
     };
-  }, [segments, subscribe, getCurrentTime, animate]);
+  }, [segments, subscribe, getCurrentTime, animate, palette]);
 
   // Synchronize visibility with the committed segment before paint.
   useLayoutEffect(() => {
@@ -359,15 +407,11 @@ function LyricsDisplayImpl(props: LyricsDisplayProps) {
     <div
       className={cn(
         'pointer-events-none absolute inset-x-0 z-10 flex flex-col gap-2 overflow-hidden px-3 sm:px-10',
-        verticalClass[vertical],
+        verticalBox,
         horizontalItemsClass[horizontal],
       )}
     >
-      <div
-        ref={containerRef}
-        className="relative max-w-full rounded-lg bg-black/40 px-3 py-2 sm:px-5 sm:py-2.5"
-        style={{ display: 'none' }}
-      >
+      <div ref={containerRef} className={CURRENT_BOX_CLASS[variant]} style={{ display: 'none' }}>
         <span ref={countdownRef} className={COUNTDOWN_CLASS} style={{ display: 'none' }} />
         {seg.words.length > 0 && (
           <p
@@ -389,7 +433,7 @@ function LyricsDisplayImpl(props: LyricsDisplayProps) {
                 refSetter={(el) => {
                   wordRefs.current[wi] = el;
                 }}
-                style={STYLES.unsung}
+                style={palette.unsung}
               />
             ))}
           </p>
@@ -397,11 +441,7 @@ function LyricsDisplayImpl(props: LyricsDisplayProps) {
       </div>
 
       {nextSeg && (
-        <div
-          ref={nextContainerRef}
-          className="max-w-full rounded-md bg-black/25 px-3 py-1.5 sm:px-4"
-          style={{ display: 'none' }}
-        >
+        <div ref={nextContainerRef} className={NEXT_BOX_CLASS[variant]} style={{ display: 'none' }}>
           <p
             className={lineClass(nextHasReading, 'leading-tight', 'gap-x-2 gap-y-0.5', horizontal)}
             style={{ fontSize: nextFontSize }}

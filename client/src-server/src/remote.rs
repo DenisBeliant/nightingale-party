@@ -30,6 +30,17 @@ pub(crate) const REMOTE_COMMANDS: &[&str] = &[
     "request_playback_command",
     "request_playback_control",
     "request_queue_playback",
+    // Multiplayer party (phones). Every call is checked against the player's
+    // secret by the party itself.
+    "party_join",
+    "party_me",
+    "party_leave",
+    "party_songs",
+    "party_genres",
+    "party_pick",
+    "party_start",
+    "party_stop",
+    "party_pitch",
 ];
 
 /// Branding the browser fetches on its own, often before the pairing cookie

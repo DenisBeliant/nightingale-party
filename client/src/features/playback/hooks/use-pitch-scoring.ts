@@ -2,6 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { TimeSubscriber } from '@/features/playback/hooks/use-audio-player';
 import {
+  ArcadeGauges,
+  EMPTY_GAUGES,
+  sameGauges,
+  type ArcadeGaugeValues,
+} from '@/features/playback/lib/pitch/arcade';
+import {
   DEFAULT_MIC_LATENCY_COMPENSATION_SEC,
   MAX_MIC_LATENCY_COMPENSATION_SEC,
   MIN_MIC_LATENCY_COMPENSATION_SEC,
@@ -34,6 +40,7 @@ export function usePitchScoring(
   const scratchRef = useRef(new Float32Array(PITCH_WINDOW_SAMPLES));
   const bufferRef = useRef(new PitchStateBuffer());
   const scoringRef = useRef(new PitchScoring(1));
+  const gaugesRef = useRef(new ArcadeGauges());
   const referenceTrackRef = useRef<ReferencePitchTrack | null>(null);
   const micPitchRef = useLatestRef(micPitch);
   const latencyRef = useLatestRef(
@@ -53,6 +60,7 @@ export function usePitchScoring(
     currentTime: 0,
   });
   const [score, setScore] = useState(0);
+  const [gauges, setGauges] = useState<ArcadeGaugeValues>(EMPTY_GAUGES);
 
   useEffect(() => {
     if (!isReady || duration <= 0) {
@@ -65,9 +73,11 @@ export function usePitchScoring(
     bufferRef.current.setOctaveAnchor(track?.octaveAnchorSemitone ?? null);
     referenceTrackRef.current = track;
     scoringRef.current = new PitchScoring(track?.singableTime ?? duration);
+    gaugesRef.current = new ArcadeGauges();
 
     setSeries(bufferRef.current.snapshot());
     setScore(0);
+    setGauges(EMPTY_GAUGES);
   }, [isReady, duration, getReferenceBuffer]);
 
   useEffect(() => {
@@ -88,6 +98,9 @@ export function usePitchScoring(
 
       bufferRef.current.tryPush(refHz, mp, sim, t);
       scoringRef.current.accumulate(t, refHz, mp, sim);
+      gaugesRef.current.accumulate(t, refHz !== null, mp !== null, sim);
+      const nextGauges = gaugesRef.current.values();
+      setGauges((previous) => (sameGauges(previous, nextGauges) ? previous : nextGauges));
 
       const snapshot = bufferRef.current.snapshot();
       snapshot.referenceTrack = track;
@@ -100,5 +113,5 @@ export function usePitchScoring(
     return subscribe(run);
   }, [getReferenceBuffer, isReady, latencyRef, micPitchRef, subscribe]);
 
-  return { series, score };
+  return { series, score, gauges };
 }

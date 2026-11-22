@@ -5,8 +5,10 @@ import { App } from '@/app/app';
 import { getMediaEndpoint } from '@/bridge/playback.tauri';
 import { isTauri } from '@/bridge/runtime';
 import { webBootstrapSchema } from '@/bridge/schemas';
+import { applyTvMode } from '@/shared/tv-mode';
 
 document.addEventListener('contextmenu', (e) => e.preventDefault());
+applyTvMode();
 
 /**
  * Tauri injects `window.__NIGHTINGALE_*` ahead of script execution via the

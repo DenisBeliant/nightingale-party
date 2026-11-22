@@ -1,3 +1,4 @@
+mod party;
 mod vendor;
 
 use std::{
@@ -40,6 +41,7 @@ pub struct CommandState {
     playback_progress: Arc<Mutex<PlaybackProgress>>,
     playback_options: Arc<Mutex<PlaybackOptions>>,
     remote_microphones: Arc<Mutex<Vec<RemoteMicrophone>>>,
+    party: Arc<party::PartyStore>,
 }
 
 impl CommandState {
@@ -52,6 +54,7 @@ impl CommandState {
             playback_progress: Arc::new(Mutex::new(PlaybackProgress::default())),
             playback_options: Arc::new(Mutex::new(PlaybackOptions::default())),
             remote_microphones: Arc::new(Mutex::new(Vec::new())),
+            party: Arc::new(party::PartyStore::default()),
         }
     }
 
@@ -728,7 +731,7 @@ pub async fn dispatch(state: CommandState, name: &str, payload: Value) -> CmdRes
             }
             let args: Args = deserialize(payload)?;
             let result = tokio::task::spawn_blocking(move || {
-                app_core::youtube_session_connect(&args.browser)
+                app_core::youtube_session_connect(args.browser.as_deref())
             })
             .await
             .map_err(blocking_task_err)?
@@ -879,6 +882,127 @@ pub async fn dispatch(state: CommandState, name: &str, payload: Value) -> CmdRes
                 .map_err(blocking_task_err)?;
             Ok(serde_json::to_value(state).map_err(serde_err)?)
         }
+        // ── Multiplayer party ────────────────────────────────────────────
+        // Host side.
+        "party_open" => {
+            let view = state.party.open();
+            let info = app_core::RemoteControl::load().party_info();
+            events.emit("party-changed", &view);
+            Ok(json!({ "url": info.url, "qrSvg": info.qr_svg, "party": view }))
+        }
+        "party_close" => {
+            let view = state.party.close();
+            events.emit("party-changed", &view);
+            Ok(serde_json::to_value(view).map_err(serde_err)?)
+        }
+        "party_view" => Ok(serde_json::to_value(state.party.view()).map_err(serde_err)?),
+        "party_finish" => {
+            #[derive(Deserialize)]
+            struct Args {
+                results: Vec<party::PartyResult>,
+            }
+            let args: Args = deserialize(payload)?;
+            let view = state.party.finish(args.results);
+            events.emit("party-changed", &view);
+            Ok(serde_json::to_value(view).map_err(serde_err)?)
+        }
+        "party_abort" => {
+            let view = state.party.abort();
+            events.emit("party-changed", &view);
+            Ok(serde_json::to_value(view).map_err(serde_err)?)
+        }
+        // Phone side: every call carries the player's secret.
+        "party_join" => {
+            #[derive(Deserialize)]
+            struct Args {
+                name: String,
+                #[serde(default)]
+                secret: Option<String>,
+            }
+            let args: Args = deserialize(payload)?;
+            let (secret, view) = state
+                .party
+                .join(&args.name, args.secret.as_deref())
+                .map_err(ApiError::bad_request)?;
+            events.emit("party-changed", &view.party);
+            Ok(json!({ "secret": secret, "view": view }))
+        }
+        "party_me" => {
+            let args: SecretArgs = deserialize(payload)?;
+            Ok(serde_json::to_value(state.party.phone_view(&args.secret)).map_err(serde_err)?)
+        }
+        "party_leave" => {
+            let args: SecretArgs = deserialize(payload)?;
+            let view = state.party.leave(&args.secret);
+            events.emit("party-changed", &view);
+            Ok(Value::Null)
+        }
+        "party_songs" => {
+            let songs = tokio::task::spawn_blocking(app_core::party_songs)
+                .await
+                .map_err(blocking_task_err)?
+                .map_err(|error| ApiError::internal(error.to_string()))?;
+            Ok(serde_json::to_value(songs).map_err(serde_err)?)
+        }
+        "party_genres" => {
+            let genres = tokio::task::spawn_blocking(app_core::party_genres)
+                .await
+                .map_err(blocking_task_err)?
+                .map_err(|error| ApiError::internal(error.to_string()))?;
+            Ok(serde_json::to_value(genres).map_err(serde_err)?)
+        }
+        "party_pick" => {
+            #[derive(Deserialize)]
+            struct Args {
+                secret: String,
+                #[serde(flatten)]
+                request: party::PickRequest,
+            }
+            let args: Args = deserialize(payload)?;
+            let store = state.party.clone();
+            let view = tokio::task::spawn_blocking(move || store.pick(&args.secret, args.request))
+                .await
+                .map_err(blocking_task_err)?
+                .map_err(ApiError::bad_request)?;
+            events.emit("party-changed", &view);
+            Ok(serde_json::to_value(view).map_err(serde_err)?)
+        }
+        "party_start" => {
+            let args: SecretArgs = deserialize(payload)?;
+            let store = state.party.clone();
+            let (view, round) = tokio::task::spawn_blocking(move || store.start(&args.secret))
+                .await
+                .map_err(blocking_task_err)?
+                .map_err(ApiError::bad_request)?;
+            events.emit("party-changed", &view);
+            events.emit("party-start", &round);
+            Ok(serde_json::to_value(view).map_err(serde_err)?)
+        }
+        "party_stop" => {
+            let args: SecretArgs = deserialize(payload)?;
+            let view = state
+                .party
+                .stop(&args.secret)
+                .map_err(ApiError::bad_request)?;
+            events.emit("party-changed", &view);
+            events.emit_value("party-stop", Value::Null);
+            Ok(serde_json::to_value(view).map_err(serde_err)?)
+        }
+        "party_pitch" => {
+            #[derive(Deserialize)]
+            struct Args {
+                secret: String,
+                #[serde(default)]
+                hz: Option<f32>,
+            }
+            let args: Args = deserialize(payload)?;
+            if let Some(player_id) = state.party.pitch_player(&args.secret) {
+                let hz = args.hz.filter(|hz| hz.is_finite() && *hz > 0.0);
+                events.emit_value("party-pitch", json!({ "playerId": player_id, "hz": hz }));
+            }
+            Ok(Value::Null)
+        }
+
         "load_songs" => {
             #[derive(Deserialize)]
             struct Args {
@@ -1096,6 +1220,11 @@ struct AuthIdArgs {
 }
 
 #[derive(Deserialize)]
+struct SecretArgs {
+    secret: String,
+}
+
+#[derive(Deserialize)]
 struct IdArgs {
     id: String,
 }
@@ -1147,6 +1276,8 @@ fn save_config_cmd(events: EventEmitter, payload: Value) -> CmdResult {
     let was_auto_analyze = current.auto_analyze();
     config.desktop_window = current.desktop_window;
     config.playback_window = current.playback_window;
+    // Owned by the backend's hardware tuning, never by the UI's copy.
+    config.analysis_auto_tune = current.analysis_auto_tune;
     config.save();
     events.0.set_monitor_gain(config.mic_monitor_gain());
     if config.auto_analyze() && !was_auto_analyze {

@@ -10,15 +10,18 @@ import {
 } from 'react';
 import { toast } from 'sonner';
 
+import type { MicCaptureOptions } from '@/bridge/microphone';
 import type { PlaybackPlayer } from '@/bridge/playback-session';
 import { useMicCapture, useMicPitch } from '@/features/microphone/hooks/use-mic-pitch';
 import { useMicReactive, type MicReactiveRef } from '@/features/microphone/hooks/use-mic-reactive';
 import { useMicDevices, type MicDevice } from '@/features/microphone/queries/use-mic-devices';
+import { partyPlayerId, usePartyPitch } from '@/features/party/lib/party-pitch-store';
 import {
   usePitchScoring,
   type PitchScoringSource,
 } from '@/features/playback/hooks/use-pitch-scoring';
 import { usePlaybackConfigPersist } from '@/features/playback/hooks/use-playback-config-persist';
+import type { ArcadeGaugeValues } from '@/features/playback/lib/pitch/arcade';
 import { DEFAULT_MIC_LATENCY_COMPENSATION_SEC } from '@/features/playback/lib/pitch/constants';
 import type { PitchSeries } from '@/features/playback/lib/pitch/state';
 import { t } from '@/i18n';
@@ -39,6 +42,10 @@ export type PlaybackPlayerMicState = {
   pitchScore: number | null;
   rawScore: number;
   series: PitchSeries;
+  /** Arcade gauges (pitch, rhythm, lyrics), 0–100. */
+  gauges: ArcadeGaugeValues;
+  /** Sings into a phone of a multiplayer party rather than a local mic. */
+  party: boolean;
   micCaptureActive: boolean;
   micPitchActive: boolean;
   micReady: boolean;
@@ -171,6 +178,41 @@ function captureSettings(
   };
 }
 
+/** Local microphone, or the phone of a party player (`party:<id>`). */
+function usePlayerPitch(
+  player: MicPlayerConfig,
+  shouldCapture: boolean,
+  shouldTrackPitch: boolean,
+  captureOptions: MicCaptureOptions,
+) {
+  const partyId = partyPlayerId(player.microphoneId);
+  const local = partyId === null;
+  const capture = useMicCapture({
+    captureId: player.id,
+    deviceId: local ? player.microphoneId : null,
+    enabled: shouldCapture && local,
+    options: captureOptions,
+  });
+  const pitch = useMicPitch(player.id, shouldTrackPitch && local);
+  const remotePitch = usePartyPitch(partyId, shouldTrackPitch);
+  if (!local) {
+    return {
+      party: true,
+      latestPitch: remotePitch,
+      captureActive: shouldTrackPitch,
+      pitchActive: shouldTrackPitch,
+      error: null,
+    };
+  }
+  return {
+    party: false,
+    latestPitch: pitch.latestPitch,
+    captureActive: capture.active,
+    pitchActive: pitch.active,
+    error: capture.error ?? pitch.error,
+  };
+}
+
 function usePlayerMic({
   player,
   captureEnabled,
@@ -182,20 +224,12 @@ function usePlayerMic({
   const shouldCapture = captureEnabled && player.present;
   const shouldTrackPitch = pitchEnabled && player.present;
   const captureOptions = useMemo(() => ({ emit_audio: emitAudio }), [emitAudio]);
-  const { active: micCaptureActive, error: micCaptureError } = useMicCapture({
-    captureId: player.id,
-    deviceId: player.microphoneId,
-    enabled: shouldCapture,
-    options: captureOptions,
-  });
-  const {
-    latestPitch,
-    active: micPitchActive,
-    error: micPitchError,
-  } = useMicPitch(player.id, shouldTrackPitch);
-  const { series, score } = usePitchScoring(
+  const mic = usePlayerPitch(player, shouldCapture, shouldTrackPitch, captureOptions);
+  const micCaptureActive = mic.captureActive;
+  const micPitchActive = mic.pitchActive;
+  const { series, score, gauges } = usePitchScoring(
     { ...source, isReady: source.isReady && player.present },
-    latestPitch,
+    mic.latestPitch,
     latencySec,
   );
   const micReady = micCaptureActive && micPitchActive;
@@ -206,10 +240,12 @@ function usePlayerMic({
     pitchScore: micReady ? score : null,
     rawScore: score,
     series,
+    gauges,
+    party: mic.party,
     micCaptureActive,
     micPitchActive,
     micReady,
-    error: micCaptureError ?? micPitchError,
+    error: mic.error,
   };
 }
 
@@ -220,10 +256,14 @@ function namePlayer(player: InternalPlayerMicState, devices: readonly MicDevice[
     profile: player.profile,
     microphoneId: player.microphoneId,
     color: player.color,
-    micName: device?.label ?? player.microphoneId ?? t('settings.microphone.default'),
+    micName: player.party
+      ? t('party.hud.phone')
+      : (device?.label ?? player.microphoneId ?? t('settings.microphone.default')),
     pitchScore: player.pitchScore,
     rawScore: player.rawScore,
     series: player.series,
+    gauges: player.gauges,
+    party: player.party,
     micCaptureActive: player.micCaptureActive,
     micPitchActive: player.micPitchActive,
     micReady: player.micReady,

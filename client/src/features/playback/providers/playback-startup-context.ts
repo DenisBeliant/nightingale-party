@@ -2,6 +2,8 @@ import { createContext, useContext } from 'react';
 
 export type PlaybackStartupState = {
   started: boolean;
+  /** Seconds left before a party round starts the song; null otherwise. */
+  countdown: number | null;
 };
 
 export type PlaybackStartupActions = {

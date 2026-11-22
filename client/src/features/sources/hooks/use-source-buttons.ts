@@ -1,4 +1,4 @@
-import { Disc3Icon, FolderIcon, RefreshCwIcon, YoutubeIcon } from 'lucide-react';
+import { Disc3Icon, FolderIcon, PartyPopperIcon, RefreshCwIcon, YoutubeIcon } from 'lucide-react';
 import type { ComponentType, SVGProps } from 'react';
 import { useNavigate } from 'react-router';
 
@@ -72,6 +72,7 @@ const useYoutubeButton = (): SourceButton => {
 
 export const useSourceButtons = (): SourceButton[] => {
   const { setMode } = useDialog();
+  const navigate = useNavigate();
   const youtube = useYoutubeButton();
   useTranslation();
   const {
@@ -145,7 +146,14 @@ export const useSourceButtons = (): SourceButton[] => {
         },
       ];
 
-  buttons.push(youtube);
+  buttons.push(youtube, {
+    key: 'party',
+    icon: PartyPopperIcon,
+    label: t('party.home.start'),
+    tooltip: t('party.home.startHint'),
+    handler: () => void navigate('/play'),
+    disabled: false,
+  });
 
   if (hasSource) {
     buttons.push({

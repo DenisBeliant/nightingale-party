@@ -18,6 +18,7 @@ import { playerDisplayName } from '@/features/playback/utils/player-display-name
 import { t, useTranslation } from '@/i18n';
 import { playerColorOption } from '@/shared/player-colors';
 import type { AppConfig } from '@/types/AppConfig';
+import type { Segment } from '@/types/Transcript';
 
 import { LiveStars } from './live-stars';
 import { PlaybackTransportControls } from './playback-transport-controls';
@@ -347,6 +348,92 @@ function PlayerScore({
   );
 }
 
+/** Party singers get their desks at the bottom of the screen instead of the HUD. */
+const isPartyRound = (multiplayer: boolean, players: PlaybackPlayerMicState[]): boolean =>
+  multiplayer && players.length > 0 && players.every((player) => player.party);
+
+/** Song title; a party round adds a "live" chip and the game show face. */
+function SongTitle({ title, party }: { title: string; party: boolean }) {
+  return (
+    <>
+      {party && <LiveBadge />}
+      <h1
+        className={`line-clamp-2 [overflow-wrap:anywhere] text-base leading-tight text-white md:text-[1.375rem] ${party ? 'font-party font-black' : ''}`}
+      >
+        {title}
+      </h1>
+    </>
+  );
+}
+
+function HudScores({
+  party,
+  multiplayer,
+  players,
+  pitchScore,
+}: {
+  party: boolean;
+  multiplayer: boolean;
+  players: PlaybackPlayerMicState[];
+  pitchScore: number | null;
+}) {
+  if (party) {
+    return null;
+  }
+  if (multiplayer) {
+    return <MultiplayerScores players={players} />;
+  }
+  return (
+    <div className="flex flex-col items-end gap-0.5">
+      <LiveStars score={pitchScore} />
+      <div className={scoreTextClass(pitchScore)}>{pitchScore ?? '--'}</div>
+    </div>
+  );
+}
+
+/** A party round wraps the HUD so its full-width seek bar gets a row of its own. */
+const hudRowClass = (party: boolean): string => (party ? 'flex-wrap gap-y-3' : '');
+
+/**
+ * The seek bar: under the title normally, a full-width game show bar below the
+ * HUD row in a party round.
+ */
+function HudTransport({
+  party,
+  placement,
+  duration,
+  segments,
+}: {
+  party: boolean;
+  placement: 'column' | 'row';
+  duration: number;
+  segments: Segment[];
+}) {
+  if (party !== (placement === 'row')) {
+    return null;
+  }
+  return party ? (
+    <PlaybackTransportControls
+      duration={duration}
+      segments={segments}
+      variant="stage"
+      className="order-last basis-full"
+    />
+  ) : (
+    <PlaybackTransportControls duration={duration} segments={segments} />
+  );
+}
+
+/** "Live" chip above the song title during a party round. */
+function LiveBadge() {
+  return (
+    <span className="mb-1.5 inline-flex w-fit items-center gap-2 rounded-xl bg-[#212130] px-3 py-1 font-party text-sm font-extrabold text-white uppercase shadow-[0_4px_0_black]">
+      <span className="size-2.5 animate-pulse rounded-full bg-rose-500" aria-hidden="true" />
+      {t('party.hud.live')}
+    </span>
+  );
+}
+
 function MultiplayerScores({ players }: { players: PlaybackPlayerMicState[] }) {
   return (
     <div
@@ -397,6 +484,8 @@ function PlaybackHudImpl({
   const { handleSkipIntro, handleSkipOutro } = usePlaybackTranscriptActions();
   const { pitchScore, micUserEnabled, micName, micMonitorUserEnabled, multiplayer, players } =
     usePlaybackMicState();
+
+  const party = isPartyRound(multiplayer, players);
 
   const skipIntroRef = useRef<HTMLButtonElement>(null);
   const skipOutroRef = useRef<HTMLButtonElement>(null);
@@ -451,16 +540,14 @@ function PlaybackHudImpl({
   return (
     <>
       <div
-        className={`pointer-events-auto absolute inset-x-0 z-20 flex justify-between gap-3 px-3 md:px-4 ${hudPosition}`}
+        className={`pointer-events-auto absolute inset-x-0 z-20 flex justify-between gap-3 px-3 md:px-4 ${hudPosition} ${hudRowClass(party)}`}
       >
         <div className="flex w-[70vw] min-w-0 max-w-80 flex-col sm:max-w-[48%] lg:max-w-96">
-          <h1 className="line-clamp-2 [overflow-wrap:anywhere] text-base leading-tight text-white md:text-[1.375rem]">
-            {title}
-          </h1>
+          <SongTitle title={title} party={party} />
           <p className="line-clamp-1 [overflow-wrap:anywhere] text-sm text-white/70 md:text-base">
             {artist}
           </p>
-          <PlaybackTransportControls duration={duration} segments={segments} />
+          <HudTransport party={party} placement="column" duration={duration} segments={segments} />
           <output
             ref={gapCaptionRef}
             aria-live="polite"
@@ -483,14 +570,12 @@ function PlaybackHudImpl({
 
         <div className={`flex min-w-0 items-end ${rightHudFlowClass} ${rightHudOffset}`}>
           <div className={`flex ${rightHudFlowClass}`}>
-            {multiplayer ? (
-              <MultiplayerScores players={players} />
-            ) : (
-              <div className="flex flex-col items-end gap-0.5">
-                <LiveStars score={pitchScore} />
-                <div className={scoreTextClass(pitchScore)}>{pitchScore ?? '--'}</div>
-              </div>
-            )}
+            <HudScores
+              party={party}
+              pitchScore={pitchScore}
+              players={players}
+              multiplayer={multiplayer}
+            />
             <div className="my-1.5 hidden h-px w-full bg-white/20 sm:block" aria-hidden="true" />
           </div>
           <div className="hidden sm:block">
@@ -508,6 +593,7 @@ function PlaybackHudImpl({
           </div>
           <TouchControls config={config} hasTouch={hasTouch} position={position} />
         </div>
+        <HudTransport party={party} placement="row" duration={duration} segments={segments} />
       </div>
 
       {showPixabayCredit && (

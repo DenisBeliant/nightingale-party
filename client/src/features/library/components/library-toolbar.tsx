@@ -1,5 +1,6 @@
-import { Grid2X2Icon, ListIcon, ListMusicIcon } from 'lucide-react';
+import { Grid2X2Icon, ListIcon, ListMusicIcon, PartyPopperIcon } from 'lucide-react';
 import { useRef } from 'react';
+import { useNavigate } from 'react-router';
 
 import { useLibraryFilter } from '@/features/menu/hooks/use-library-filter';
 import { useSearch } from '@/features/menu/hooks/use-search';
@@ -43,6 +44,7 @@ export const LibraryToolbar = ({
   const { search, setSearch } = useSearch();
   const { status, transcript_source, setLibraryFilter } = useLibraryFilter();
   const { focus } = useMenuFocus();
+  const navigate = useNavigate();
   const isActionFocused = (index: number) =>
     focus.active &&
     focus.panel === 'songList' &&
@@ -119,6 +121,14 @@ export const LibraryToolbar = ({
         </SelectContent>
       </Select>
       <div className="col-span-2 flex items-center justify-end gap-2 sm:col-span-1">
+        <Button
+          className="shrink-0"
+          onClick={() => void navigate('/play')}
+          title={t('party.home.startHint')}
+        >
+          <PartyPopperIcon />
+          <span className="hidden sm:inline">{t('party.home.start')}</span>
+        </Button>
         <Button
           variant="outline"
           size="icon"

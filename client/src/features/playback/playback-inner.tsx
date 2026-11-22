@@ -12,6 +12,9 @@ import type { PlaybackOptions, PlaybackProgress } from '@/bridge/playback-remote
 import type { PlaybackPlayer } from '@/bridge/playback-session';
 import type { PlaybackCommand, PlaybackStatus } from '@/bridge/playback-status';
 import { isTauri } from '@/bridge/runtime';
+import { PartyCountdown } from '@/features/party/components/countdown';
+import { PartyStageBar } from '@/features/party/components/party-stage-bar';
+import { usePartyRound } from '@/features/party/host/use-party-round';
 import { Background } from '@/features/playback/components/background';
 import { ResultDialog } from '@/features/playback/components/dialogs/result';
 import { LoadingScreen } from '@/features/playback/components/loading-screen';
@@ -71,6 +74,22 @@ function displaySettings(config: AppConfig | null) {
   };
 }
 
+/**
+ * A party round is laid out as a TV game show: lyrics on a card above the
+ * contestant desks at the bottom, the song HUD at the top.
+ */
+const stageLayout = (
+  players: ReturnType<typeof usePlaybackMicState>['players'],
+  lyricsVerticalPosition: ReturnType<typeof displaySettings>['lyricsVerticalPosition'],
+) => {
+  const party = players.some((player) => player.party);
+  return {
+    party,
+    lyricsVertical: party ? 'bottom' : lyricsVerticalPosition,
+    lyricsVariant: party ? ('stage' as const) : ('default' as const),
+  };
+};
+
 function PlaybackLayout({
   song,
   config,
@@ -91,7 +110,7 @@ function PlaybackLayout({
   const transcript = usePlaybackTranscriptState();
   const { segments } = transcript;
   const transcriptActions = usePlaybackTranscriptActions();
-  const { started } = usePlaybackStartupState();
+  const { started, countdown } = usePlaybackStartupState();
   const { theme, themes, videoFlavor } = usePlaybackThemeState();
   const themeActions = usePlaybackThemeActions();
   const mic = usePlaybackMicState();
@@ -104,10 +123,12 @@ function PlaybackLayout({
     pitchGraphScale,
     lyricsRomanizationMode,
   } = displaySettings(config);
-  const hudPosition = lyricsVerticalPosition === 'top' ? 'bottom' : 'top';
+  const { party, lyricsVertical, lyricsVariant } = stageLayout(mic.players, lyricsVerticalPosition);
+  const hudPosition = lyricsVertical === 'top' ? 'bottom' : 'top';
   const sessionWindowControls = sessionPlayback && isTauri;
 
   const result = usePlaybackResult(song, queuePlayback, players ?? []);
+  usePartyRound();
   usePlaybackInput(config, !result.open);
 
   // One state object feeds the host modals and the phone remote, so both offer
@@ -240,17 +261,25 @@ function PlaybackLayout({
         windowControls={sessionWindowControls}
       />
       {!isPitchGuideTheme(theme) && (
-        <PitchGraph series={mic.series} position={hudPosition} scale={pitchGraphScale} />
+        <PitchGraph
+          series={mic.series}
+          position={hudPosition}
+          scale={pitchGraphScale}
+          stage={party}
+        />
       )}
       <LyricsDisplay
         segments={segments}
-        verticalPosition={lyricsVerticalPosition}
+        verticalPosition={lyricsVertical}
         horizontalPosition={lyricsHorizontalPosition}
         scale={lyricsScale}
         romanizationMode={lyricsRomanizationMode}
+        variant={lyricsVariant}
       />
+      <PartyStageBar />
 
       {!started && <LoadingScreen song={song} />}
+      {countdown !== null && <PartyCountdown value={countdown} />}
 
       <PauseOverlay open={paused && !result.open} actions={actions} onCommand={runCommand} />
 

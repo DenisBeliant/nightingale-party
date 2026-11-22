@@ -6,6 +6,7 @@
 import type { ReactNode } from 'react';
 
 import type { PlaybackPlayer } from '@/bridge/playback-session';
+import { partyPlayerId } from '@/features/party/lib/party-pitch-store';
 import type { AppConfig } from '@/types/AppConfig';
 import type { Song } from '@/types/Song';
 
@@ -22,7 +23,11 @@ type PlaybackProvidersProps = {
   children: ReactNode;
 };
 
+/** Party rounds count down before the song so every phone is ready. */
+const PARTY_COUNTDOWN_SECONDS = 3;
+
 export function PlaybackProviders({ song, config, players, children }: PlaybackProvidersProps) {
+  const party = players?.some((player) => partyPlayerId(player.microphoneId) !== null) === true;
   return (
     <PlaybackTransportProvider
       fileHash={song.file_hash}
@@ -32,7 +37,9 @@ export function PlaybackProviders({ song, config, players, children }: PlaybackP
       <PlaybackThemeProvider song={song} config={config}>
         <PlaybackMicProvider config={config} players={players}>
           <PlaybackTranscriptProvider fileHash={song.file_hash}>
-            <PlaybackStartupProvider>{children}</PlaybackStartupProvider>
+            <PlaybackStartupProvider countdownSeconds={party ? PARTY_COUNTDOWN_SECONDS : 0}>
+              {children}
+            </PlaybackStartupProvider>
           </PlaybackTranscriptProvider>
         </PlaybackMicProvider>
       </PlaybackThemeProvider>

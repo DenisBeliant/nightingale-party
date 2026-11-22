@@ -1,4 +1,4 @@
-import { Disc3Icon, FolderIcon, MusicIcon, YoutubeIcon } from 'lucide-react';
+import { Disc3Icon, FolderIcon, MusicIcon, PartyPopperIcon, YoutubeIcon } from 'lucide-react';
 import { useNavigate } from 'react-router';
 
 import { useDialog } from '@/features/menu/hooks/use-dialog';
@@ -70,6 +70,10 @@ export const EmptyLibrary = () => {
         <Button variant="outline" onClick={() => void navigate('/playlists?connect=1')}>
           <YoutubeIcon />
           {t('playlists.session.use')}
+        </Button>
+        <Button onClick={() => void navigate('/play')}>
+          <PartyPopperIcon />
+          {t('party.home.start')}
         </Button>
       </EmptyContent>
     </Empty>

@@ -119,13 +119,28 @@ function currentNotes(
   };
 }
 
+/** The party lane sits under the song HUD; the classic graph hugs the edge. */
+const pitchGraphPositionClass = (position: 'top' | 'bottom', stage: boolean): string => {
+  if (stage) {
+    return 'top-[45%] -translate-y-1/2';
+  }
+  return position === 'bottom' ? 'bottom-2 sm:bottom-3' : 'top-2 sm:top-3';
+};
+
 type PitchGraphProps = {
   series: PitchSeries;
   position?: 'top' | 'bottom';
   scale?: number | null;
+  /** Party "game show" look: a rounded stage panel instead of the thin box. */
+  stage?: boolean;
 };
 
-export function PitchGraph({ series, position = 'top', scale = 1 }: PitchGraphProps) {
+export function PitchGraph({
+  series,
+  position = 'top',
+  scale = 1,
+  stage = false,
+}: PitchGraphProps) {
   const { micReady, multiplayer, players } = usePlaybackMicState();
   const visible = multiplayer ? players.some((player) => player.micReady) : micReady;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -153,18 +168,23 @@ export function PitchGraph({ series, position = 'top', scale = 1 }: PitchGraphPr
             }))
         : [],
       notes: currentNotes(multiplayer, players, series, stableNotesRef.current),
+      stage,
     });
-  }, [multiplayer, players, series, visible, windowHeight, windowWidth, scale]);
+  }, [multiplayer, players, series, visible, windowHeight, windowWidth, scale, stage]);
 
   if (!visible) {
     return null;
   }
 
-  const positionClass = position === 'bottom' ? 'bottom-2 sm:bottom-3' : 'top-2 sm:top-3';
+  const positionClass = pitchGraphPositionClass(position, stage);
 
   return (
     <div
-      className={`pointer-events-none absolute left-1/2 z-20 -translate-x-1/2 rounded-sm border-white/15 bg-black/40 p-1 ${positionClass}`}
+      className={`pointer-events-none absolute left-1/2 z-20 -translate-x-1/2 ${
+        stage
+          ? 'rounded-3xl border-2 border-[#2B2B3A] bg-[#171726]/85 p-2 shadow-[0_6px_0_black]'
+          : 'rounded-sm border-white/15 bg-black/40 p-1'
+      } ${positionClass}`}
     >
       <canvas ref={canvasRef} className="block" aria-hidden="true" />
     </div>

@@ -25,3 +25,4 @@ export const YOUTUBE_SEARCH = ['youtube-search'];
 export const WISH_PLAYLISTS = ['wish-playlists'];
 export const WISH_PLAYLIST = ['wish-playlist'];
 export const WISH_DOWNLOADER = ['wish-downloader'];
+export const TV_SERVER = ['tv-server'];

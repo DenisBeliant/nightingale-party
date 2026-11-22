@@ -49,8 +49,15 @@ function blurActiveElement() {
   }
 }
 
-function keyToAction(key: string): Partial<NavAction> | null {
-  switch (key) {
+/** TV remotes' Back button: Android (4), webOS (461), Tizen (10009). */
+const BACK_KEY_CODES = new Set([4, 461, 10009]);
+const BACK_KEYS = new Set(['Escape', 'GoBack', 'BrowserBack']);
+
+function keyToAction(event: KeyboardEvent): Partial<NavAction> | null {
+  if (BACK_KEYS.has(event.key) || BACK_KEY_CODES.has(event.keyCode)) {
+    return { back: true };
+  }
+  switch (event.key) {
     case 'ArrowUp':
       return { up: true };
     case 'ArrowDown':
@@ -61,8 +68,6 @@ function keyToAction(key: string): Partial<NavAction> | null {
       return { right: true };
     case 'Enter':
       return { confirm: true };
-    case 'Escape':
-      return { back: true };
     default:
       return null;
   }
@@ -95,7 +100,7 @@ export function NavInputProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const partial = keyToAction(e.key);
+      const partial = keyToAction(e);
       if (!partial) {
         return;
       }

@@ -11,11 +11,14 @@ import {
 } from '@/bridge/playback-session';
 import { t } from '@/i18n';
 import { useConfig } from '@/shared/config/use-config';
+import { isTvMode } from '@/shared/tv-mode';
 
 export function usePlaybackLauncher() {
   const navigate = useNavigate();
   const { data: config } = useConfig();
-  const sessionMode = config?.playback_mode === 'session';
+  // A TV browser opens the separate playback window as a tab its Back button
+  // cannot leave: on a TV, playback always stays in the page.
+  const sessionMode = config?.playback_mode === 'session' && !isTvMode();
 
   const reserveTarget = useCallback((): PlaybackTarget => {
     const target = sessionMode ? reservePlaybackTarget() : null;

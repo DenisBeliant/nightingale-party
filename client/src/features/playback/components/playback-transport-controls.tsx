@@ -57,6 +57,25 @@ export type TransportLines = {
   seek: (delta: 1 | -1) => void;
 };
 
+/** `stage`: the party "game show" bar, one full-width row with a thick gold track. */
+export type TransportVariant = 'default' | 'stage';
+
+const SLIDER_CLASS: Record<TransportVariant, string> = {
+  default: 'seek-slider block h-[14px] w-full [@media(any-pointer:coarse)]:h-[24px]',
+  stage: 'seek-slider seek-slider-stage block h-7 min-w-0 flex-1',
+};
+
+const TIMER_CLASS: Record<TransportVariant, string> = {
+  default: 'text-[16px] text-white/60 tabular-nums',
+  stage:
+    'shrink-0 rounded-xl bg-[#212130] px-3 py-1 font-party text-base font-black text-white tabular-nums shadow-[0_4px_0_black]',
+};
+
+/** Fills the stage track up to the current position. */
+const setProgress = (slider: HTMLInputElement | null, time: number, duration: number): void => {
+  slider?.style.setProperty('--seek-progress', `${duration > 0 ? (time / duration) * 100 : 0}%`);
+};
+
 export type TransportControlsProps = {
   duration: number;
   subscribe: (fn: (time: number) => void) => () => void;
@@ -64,6 +83,7 @@ export type TransportControlsProps = {
   seek: (seconds: number) => void;
   lines: TransportLines;
   className?: string;
+  variant?: TransportVariant;
 };
 
 /**
@@ -77,6 +97,7 @@ export function TransportControls({
   seek,
   lines,
   className,
+  variant = 'default',
 }: TransportControlsProps) {
   const timerRef = useRef<HTMLParagraphElement>(null);
   const sliderRef = useRef<HTMLInputElement>(null);
@@ -91,6 +112,7 @@ export function TransportControls({
         if (sliderRef.current) {
           sliderRef.current.value = String(clamped);
         }
+        setProgress(sliderRef.current, clamped, duration);
         if (timerRef.current) {
           timerRef.current.textContent = `${formatSeconds(clamped)} / ${formatSeconds(duration)}`;
         }
@@ -115,6 +137,7 @@ export function TransportControls({
   const previewSeek = useCallback(() => {
     const value = Number(sliderRef.current?.value ?? 0);
     draggingRef.current = true;
+    setProgress(sliderRef.current, value, duration);
     if (timerRef.current) {
       timerRef.current.textContent = `${formatSeconds(value)} / ${formatSeconds(duration)}`;
     }
@@ -128,60 +151,82 @@ export function TransportControls({
   const seekRelative = (seconds: number) =>
     seek(Math.max(0, Math.min(duration, getCurrentTime() + seconds)));
 
-  return (
+  const timer = (
+    <p ref={timerRef} className={TIMER_CLASS[variant]}>
+      0:00 / {formatSeconds(duration)}
+    </p>
+  );
+  const buttons = (
+    <div className="flex shrink-0 items-center gap-0.5">
+      <TransportButton
+        icon={SkipBackIcon}
+        label={t('playback.playbackTransportControls.previousLyricLine')}
+        buttonRef={previousLineRef}
+        onClick={() => lines.seek(-1)}
+      />
+      <TransportButton
+        icon={RotateCcwIcon}
+        label={t('playback.playbackTransportControls.jump1SecondBack')}
+        onClick={() => seekRelative(-1)}
+      />
+      <TransportButton
+        icon={RotateCwIcon}
+        label={t('playback.playbackTransportControls.jump1SecondForward')}
+        onClick={() => seekRelative(1)}
+      />
+      <TransportButton
+        icon={SkipForwardIcon}
+        label={t('playback.playbackTransportControls.nextLyricLine')}
+        buttonRef={nextLineRef}
+        onClick={() => lines.seek(1)}
+      />
+    </div>
+  );
+  const slider = (
+    <input
+      ref={sliderRef}
+      type="range"
+      min={0}
+      max={duration}
+      step={0.1}
+      defaultValue={0}
+      aria-label={t('playback.playbackTransportControls.seekThroughTrack')}
+      onInput={previewSeek}
+      onPointerUp={commitSeek}
+      onPointerCancel={commitSeek}
+      onKeyDown={(event) => {
+        if (isSeekKey(event.key)) {
+          draggingRef.current = true;
+        }
+      }}
+      onKeyUp={(event) => isSeekKey(event.key) && commitSeek()}
+      onBlur={() => draggingRef.current && commitSeek()}
+      className={cn(
+        SLIDER_CLASS[variant],
+        'cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f3ead7]',
+      )}
+    />
+  );
+
+  return variant === 'stage' ? (
+    <div
+      className={cn('flex w-full items-center gap-4', className)}
+      aria-label={t('playback.playbackTransportControls.playbackPosition')}
+    >
+      {timer}
+      {slider}
+      {buttons}
+    </div>
+  ) : (
     <div
       className={cn('mt-1.5 w-full max-w-[340px]', className)}
       aria-label={t('playback.playbackTransportControls.playbackPosition')}
     >
       <div className="flex h-[28px] items-center justify-between gap-3 [@media(any-pointer:coarse)]:h-[44px]">
-        <p ref={timerRef} className="text-[16px] text-white/60 tabular-nums">
-          0:00 / {formatSeconds(duration)}
-        </p>
-        <div className="flex shrink-0 items-center gap-0.5">
-          <TransportButton
-            icon={SkipBackIcon}
-            label={t('playback.playbackTransportControls.previousLyricLine')}
-            buttonRef={previousLineRef}
-            onClick={() => lines.seek(-1)}
-          />
-          <TransportButton
-            icon={RotateCcwIcon}
-            label={t('playback.playbackTransportControls.jump1SecondBack')}
-            onClick={() => seekRelative(-1)}
-          />
-          <TransportButton
-            icon={RotateCwIcon}
-            label={t('playback.playbackTransportControls.jump1SecondForward')}
-            onClick={() => seekRelative(1)}
-          />
-          <TransportButton
-            icon={SkipForwardIcon}
-            label={t('playback.playbackTransportControls.nextLyricLine')}
-            buttonRef={nextLineRef}
-            onClick={() => lines.seek(1)}
-          />
-        </div>
+        {timer}
+        {buttons}
       </div>
-      <input
-        ref={sliderRef}
-        type="range"
-        min={0}
-        max={duration}
-        step={0.1}
-        defaultValue={0}
-        aria-label={t('playback.playbackTransportControls.seekThroughTrack')}
-        onInput={previewSeek}
-        onPointerUp={commitSeek}
-        onPointerCancel={commitSeek}
-        onKeyDown={(event) => {
-          if (isSeekKey(event.key)) {
-            draggingRef.current = true;
-          }
-        }}
-        onKeyUp={(event) => isSeekKey(event.key) && commitSeek()}
-        onBlur={() => draggingRef.current && commitSeek()}
-        className="seek-slider block h-[14px] w-full cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f3ead7] [@media(any-pointer:coarse)]:h-[24px]"
-      />
+      {slider}
     </div>
   );
 }
@@ -190,9 +235,13 @@ export function TransportControls({
 export function PlaybackTransportControls({
   duration,
   segments,
+  variant,
+  className,
 }: {
   duration: number;
   segments: Segment[];
+  variant?: TransportVariant;
+  className?: string;
 }) {
   const { subscribe, getCurrentTime, seek } = usePlaybackTransportActions();
   const hintRef = useRef(0);
@@ -229,6 +278,8 @@ export function PlaybackTransportControls({
       getCurrentTime={getCurrentTime}
       seek={seek}
       lines={lines}
+      variant={variant}
+      className={className}
     />
   );
 }

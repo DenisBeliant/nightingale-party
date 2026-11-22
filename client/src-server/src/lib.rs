@@ -1,15 +1,19 @@
 mod backgrounds;
 mod bootstrap;
 mod commands;
+mod discovery;
 mod events;
 mod jukebox;
 mod media;
+mod party_tls;
 mod remote;
 mod state;
 mod static_files;
 mod ws;
 
+pub use discovery::{serve_discovery, DISCOVERY_PORT};
 pub use events::EventBus;
+pub use party_tls::serve_party_tls;
 pub use state::{AppState, RemoteAddress};
 
 use axum::{

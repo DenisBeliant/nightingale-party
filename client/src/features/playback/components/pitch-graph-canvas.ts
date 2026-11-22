@@ -10,6 +10,12 @@ type CanvasLayout = {
   plotWidth: number;
   plotHeight: number;
   lineWidth: number;
+  /** Lowest semitone at the bottom of the plot, and how many fit above it. */
+  lowest: number;
+  range: number;
+  /** Where "now" sits across the plot: 0.5 is centred, smaller shows more of what is coming. */
+  cursorRatio: number;
+  stage: boolean;
 };
 
 type PlotPoint = {
@@ -37,6 +43,8 @@ type RenderPitchGraphInput = {
   series: PitchSeries;
   players: PitchGraphPlayer[];
   notes: PitchGraphNotes;
+  /** Party "game show" lane: wide, tall, notes as bars flowing to a yellow cursor. */
+  stage?: boolean;
 };
 
 const BASE_DISPLAY_WIDTH = 400;
@@ -69,6 +77,34 @@ function displayScale(windowHeight: number): number {
   return Math.max(MIN_DISPLAY_SCALE, windowHeight / REFERENCE_HEIGHT);
 }
 
+/** Party lane: a narrower note range so each note is a thick bar. */
+const STAGE_SEMITONE_RANGE = 16;
+const STAGE_CURSOR_RATIO = 0.22;
+const STAGE_CURSOR_COLOR = '#FACC15';
+const STAGE_BAR_COLOR = '#4A6BF7';
+const STAGE_BAR_SUNG_COLOR = '#2B3FA8';
+const STAGE_BAR_SHADOW = 'rgba(16,24,80,0.85)';
+
+function computeStageLayout(windowHeight: number, windowWidth: number): CanvasLayout {
+  const width = Math.max(240, Math.min(windowWidth - 48, 1800));
+  const height = Math.min(280, Math.max(100, windowHeight * 0.22));
+  const paddingX = 14;
+  const paddingY = 12;
+  return {
+    width,
+    height,
+    paddingX,
+    paddingY,
+    plotWidth: width - paddingX * 2,
+    plotHeight: height - paddingY * 2,
+    lineWidth: Math.max(4, height / 36),
+    lowest: LOWEST_VISIBLE_SEMITONE,
+    range: STAGE_SEMITONE_RANGE,
+    cursorRatio: STAGE_CURSOR_RATIO,
+    stage: true,
+  };
+}
+
 function computeLayout(windowHeight: number, windowWidth: number, userScale: number): CanvasLayout {
   const scale = displayScale(windowHeight) * userScale;
   const width = Math.min(BASE_DISPLAY_WIDTH * scale, Math.max(240, windowWidth - 32));
@@ -84,6 +120,10 @@ function computeLayout(windowHeight: number, windowWidth: number, userScale: num
     plotWidth: width - paddingX * 2,
     plotHeight: height - paddingY * 2,
     lineWidth: Math.max(2.25, 2 * scale),
+    lowest: LOWEST_VISIBLE_SEMITONE,
+    range: VISIBLE_SEMITONE_RANGE,
+    cursorRatio: 0.5,
+    stage: false,
   };
 }
 
@@ -110,20 +150,18 @@ function rgbaString({ r, g, b }: Rgb, alpha: number): string {
 }
 
 function semitoneToY(semitone: number, layout: CanvasLayout): number {
-  const normalized = Math.min(
-    1,
-    Math.max(0, (semitone - LOWEST_VISIBLE_SEMITONE) / VISIBLE_SEMITONE_RANGE),
-  );
+  const normalized = Math.min(1, Math.max(0, (semitone - layout.lowest) / layout.range));
 
   return layout.paddingY + (1 - normalized) * layout.plotHeight;
 }
 
 function currentX(layout: CanvasLayout): number {
-  return layout.paddingX + layout.plotWidth / 2;
+  return layout.paddingX + layout.plotWidth * layout.cursorRatio;
 }
 
 function timeToX(timeOffset: number, layout: CanvasLayout): number {
-  return currentX(layout) + (timeOffset / GRAPH_WINDOW_SECONDS) * (layout.plotWidth / 2);
+  const side = timeOffset < 0 ? layout.cursorRatio : 1 - layout.cursorRatio;
+  return currentX(layout) + (timeOffset / GRAPH_WINDOW_SECONDS) * layout.plotWidth * side;
 }
 
 function ageAlpha(index: number, seriesLength: number): number {
@@ -407,6 +445,153 @@ function drawCurrentNotes(
   }
 }
 
+/** Index range of the reference track around now. */
+function trackWindow(series: PitchSeries): { start: number; end: number } | null {
+  const track = series.referenceTrack;
+  if (!track) {
+    return null;
+  }
+  return {
+    start: Math.max(
+      0,
+      Math.floor((series.referenceTime - GRAPH_WINDOW_SECONDS) / track.intervalSec),
+    ),
+    end: Math.min(
+      track.pitches.length,
+      Math.ceil((series.referenceTime + GRAPH_WINDOW_SECONDS) / track.intervalSec) + 1,
+    ),
+  };
+}
+
+const roundedSemitone = (hz: number | null): number | null =>
+  hz === null || hz <= 0 ? null : Math.round(freqToSemitone(hz));
+
+/** Centres the party lane on the current melody, moving in whole semitones. */
+function centreStageLayout(layout: CanvasLayout, series: PitchSeries): CanvasLayout {
+  const range = trackWindow(series);
+  const track = series.referenceTrack;
+  if (range === null || track === null) {
+    return layout;
+  }
+  const semitones = track.pitches
+    .slice(range.start, range.end)
+    .flatMap((hz) => {
+      const semitone = roundedSemitone(hz);
+      return semitone === null ? [] : [semitone];
+    })
+    .toSorted((a, b) => a - b);
+  if (semitones.length === 0) {
+    return layout;
+  }
+  const median = semitones[Math.floor(semitones.length / 2)];
+  return { ...layout, lowest: Math.round(median - layout.range / 2) };
+}
+
+type NoteBar = { from: number; to: number; semitone: number };
+
+/** Reference melody as note bars: runs of the same rounded semitone. */
+function referenceBars(series: PitchSeries): NoteBar[] {
+  const range = trackWindow(series);
+  const track = series.referenceTrack;
+  if (range === null || track === null) {
+    return [];
+  }
+  const bars: NoteBar[] = [];
+  let open: NoteBar | null = null;
+  for (let i = range.start; i < range.end; i++) {
+    const semitone = roundedSemitone(track.pitches[i] ?? null);
+    const time = i * track.intervalSec;
+    if (open !== null && semitone === open.semitone) {
+      open.to = time + track.intervalSec;
+      continue;
+    }
+    open = semitone === null ? null : { from: time, to: time + track.intervalSec, semitone };
+    if (open !== null) {
+      bars.push(open);
+    }
+  }
+  return bars;
+}
+
+function drawStageLanes(ctx: CanvasRenderingContext2D, layout: CanvasLayout): void {
+  ctx.strokeStyle = 'rgba(117,148,255,0.09)';
+  ctx.lineWidth = 1;
+  for (let step = 0; step <= layout.range; step += 2) {
+    const y = semitoneToY(layout.lowest + step, layout);
+    ctx.beginPath();
+    ctx.moveTo(layout.paddingX, y);
+    ctx.lineTo(layout.width - layout.paddingX, y);
+    ctx.stroke();
+  }
+}
+
+function drawStageBars(
+  ctx: CanvasRenderingContext2D,
+  layout: CanvasLayout,
+  series: PitchSeries,
+): void {
+  const barHeight = Math.max(8, (layout.plotHeight / layout.range) * 0.85);
+  for (const bar of referenceBars(series)) {
+    const x = timeToX(bar.from - series.referenceTime, layout);
+    const width = Math.max(barHeight, timeToX(bar.to - series.referenceTime, layout) - x);
+    const y = semitoneToY(bar.semitone, layout) - barHeight / 2;
+    ctx.fillStyle = STAGE_BAR_SHADOW;
+    ctx.beginPath();
+    ctx.roundRect(x, y + 3, width, barHeight, barHeight / 2);
+    ctx.fill();
+    ctx.fillStyle = bar.to < series.referenceTime ? STAGE_BAR_SUNG_COLOR : STAGE_BAR_COLOR;
+    ctx.beginPath();
+    ctx.roundRect(x, y, width, barHeight, barHeight / 2);
+    ctx.fill();
+  }
+}
+
+function drawStageCursor(ctx: CanvasRenderingContext2D, layout: CanvasLayout): void {
+  ctx.save();
+  ctx.shadowColor = STAGE_CURSOR_COLOR;
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = STAGE_CURSOR_COLOR;
+  ctx.fillRect(currentX(layout) - 2, 0, 4, layout.height);
+  ctx.restore();
+}
+
+function drawSingers(
+  ctx: CanvasRenderingContext2D,
+  layout: CanvasLayout,
+  { series, players }: Pick<RenderPitchGraphInput, 'series' | 'players'>,
+): void {
+  if (players.length === 0) {
+    drawPitchSeries({ ctx, layout, series, includeReference: !layout.stage });
+    return;
+  }
+  players.forEach((player, index) => {
+    drawPitchSeries({
+      ctx,
+      layout,
+      series: player.series,
+      baseColor: player.color,
+      includeReference: !layout.stage && index === 0,
+    });
+  });
+}
+
+function renderStage(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  input: RenderPitchGraphInput,
+): void {
+  const reference = input.players.at(0)?.series ?? input.series;
+  const layout = centreStageLayout(
+    computeStageLayout(input.windowHeight, input.windowWidth),
+    reference,
+  );
+  setupCanvas(canvas, ctx, layout);
+  drawStageLanes(ctx, layout);
+  drawStageBars(ctx, layout, reference);
+  drawSingers(ctx, layout, input);
+  drawStageCursor(ctx, layout);
+}
+
 export function renderPitchGraph({
   canvas,
   windowHeight,
@@ -415,29 +600,21 @@ export function renderPitchGraph({
   series,
   players,
   notes,
+  stage,
 }: RenderPitchGraphInput): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) {
     return;
   }
 
-  const layout = computeLayout(windowHeight, windowWidth, scale);
-  setupCanvas(canvas, ctx, layout);
-
-  if (players.length > 0) {
-    players.forEach((player, index) => {
-      drawPitchSeries({
-        ctx,
-        layout,
-        series: player.series,
-        baseColor: player.color,
-        includeReference: index === 0,
-      });
-    });
-  } else {
-    drawPitchSeries({ ctx, layout, series });
+  if (stage === true) {
+    renderStage(ctx, canvas, { canvas, windowHeight, windowWidth, scale, series, players, notes });
+    return;
   }
 
+  const layout = computeLayout(windowHeight, windowWidth, scale);
+  setupCanvas(canvas, ctx, layout);
+  drawSingers(ctx, layout, { series, players });
   drawCurrentLine(ctx, layout);
   drawCurrentNotes(ctx, notes);
 }

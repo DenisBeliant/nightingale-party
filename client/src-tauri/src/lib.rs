@@ -1,6 +1,7 @@
 mod backgrounds;
 mod logging;
 mod microphones;
+mod tv_server;
 
 use std::{
     collections::HashMap,
@@ -21,6 +22,7 @@ use tauri::{
     AppHandle, Emitter, Manager, PhysicalSize, RunEvent, WebviewWindow, WebviewWindowBuilder,
     WindowEvent,
 };
+use tv_server::{TvServer, TvServerStatus};
 
 #[derive(Clone)]
 struct DesktopRuntime {
@@ -108,6 +110,8 @@ impl RemoteServer {
         );
 
         tracing::info!(%address, "remote control listening");
+        // The same phone surface over HTTPS, for the party's phone microphones.
+        tauri::async_runtime::spawn(server::serve_party_tls(state.clone()));
         let handle = tauri::async_runtime::spawn(serve_remote(listener, state));
         *self
             .listener
@@ -263,6 +267,29 @@ fn remote_control_info(remote: tauri::State<'_, RemoteServer>) -> app_core::Remo
 }
 
 #[tauri::command]
+fn tv_server_status(tv: tauri::State<'_, TvServer>) -> TvServerStatus {
+    tv.status()
+}
+
+/// "Play on the TV": serve the web app on the LAN for the Nightingale TV app.
+#[tauri::command]
+async fn tv_server_start(
+    app: AppHandle,
+    tv: tauri::State<'_, TvServer>,
+) -> Result<TvServerStatus, String> {
+    let status = tv.start().await;
+    let _ = app.emit("tv-server-changed", &status);
+    Ok(status)
+}
+
+#[tauri::command]
+fn tv_server_stop(app: AppHandle, tv: tauri::State<'_, TvServer>) -> TvServerStatus {
+    let status = tv.stop();
+    let _ = app.emit("tv-server-changed", &status);
+    status
+}
+
+#[tauri::command]
 fn frontend_ready(window: tauri::Window) -> Result<(), String> {
     window.show().map_err(|error| error.to_string())
 }
@@ -338,6 +365,9 @@ pub fn run() {
             import_custom_background,
             get_media_endpoint,
             remote_control_info,
+            tv_server_status,
+            tv_server_start,
+            tv_server_stop,
             list_microphones,
             start_mic_capture,
             set_mic_monitoring,
@@ -351,6 +381,7 @@ pub fn run() {
                 events: events.clone(),
             }));
             app.manage(commands.clone());
+            app.manage(TvServer::new(commands.clone(), events.clone()));
             app.manage(RemoteServer::new(commands, events));
             app.manage(WindowStates::default());
             app.handle()

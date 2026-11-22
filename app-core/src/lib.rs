@@ -12,6 +12,8 @@ mod lrc;
 mod lyrics;
 pub mod media_server;
 pub mod nge_format;
+mod party_library;
+mod party_tls;
 mod playback;
 mod playback_queue;
 mod playback_session;
@@ -71,6 +73,10 @@ pub use lyrics::{
     search_lrclib_for_hash,
 };
 pub use media_server::{MediaEndpoint, local_media_roots};
+pub use party_library::{
+    PartyGenre, PartySong, party_genres, party_random_song, party_song, party_songs, party_token,
+};
+pub use party_tls::{PartyCertificate, party_certificate};
 pub use playback::{
     AudioPaths, PixabayVideoDownloaded, ShiftDone, ShiftResult, StemsReady,
     download_pixabay_videos, ensure_mp3_stems, ensure_mp3_stems_ready_payload,
@@ -81,7 +87,9 @@ pub use playback::{
 pub use playback_queue::{PlaybackQueue, PlaybackQueueEntry};
 pub use playback_session::{PlaybackPlayer, PlaybackSession, PlaybackSessionStore};
 pub use profile::ProfileStore;
-pub use remote_control::{REMOTE_PORT, RemoteControl, RemoteInfo, lan_base, lan_ip};
+pub use remote_control::{
+    PARTY_TLS_PORT, REMOTE_PORT, RemoteControl, RemoteInfo, lan_base, lan_ip,
+};
 pub use scanner::{CacheReconcileSummary, reconcile_cache, start_scan};
 pub use song::{Song, SongOrigin};
 pub use song_export::{export_song_nge, exports_dir};
